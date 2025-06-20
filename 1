@@ -1,0 +1,32 @@
+WITH 
+-- 1. Находим последние completed-записи для каждого epk_id
+last_completed AS (
+    SELECT *
+    FROM (
+        SELECT 
+            c.*,
+            ROW_NUMBER() OVER (PARTITION BY epk_id ORDER BY id DESC) AS rn
+        FROM calculation c
+        WHERE c.status = 'completed'
+    ) t WHERE rn = 1
+)
+-- 2. Считаем оригинальные + связанные записи (без дублей)
+SELECT 
+    lc.id_rest_value,
+    COUNT(*) AS total_records  -- Точное количество без дублей
+FROM (
+    -- Оригинальные записи (уникальные по определению)
+    SELECT lc.id_rest_value, lc.id
+    FROM historical_data hd
+    JOIN last_completed lc ON hd.epk_id = lc.epk_id
+    
+    UNION ALL  -- UNION ALL безопасен, так как связанные записи уникальны
+    
+    -- Связанные записи (гарантированно уникальные)
+    SELECT lc.id_rest_value, related.id
+    FROM historical_data hd
+    JOIN last_completed lc ON hd.epk_id = lc.epk_id
+    JOIN calculation related ON related.id = lc.id_relations
+) combined
+GROUP BY id_rest_value
+ORDER BY id_rest_value;
