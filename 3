@@ -1,0 +1,15 @@
+WITH Last_completed AS (
+    SELECT *
+    FROM (
+        SELECT
+            cck.*,
+            ROW_NUMBER() OVER (PARTITION BY cck.epk_id ORDER BY id DESC) AS rn
+        FROM ccl_calculation_kk cck
+        WHERE cck.status_code = 'completed'
+    ) t 
+    WHERE rn = 1
+)
+SELECT lc.id_result_value, COUNT(*) AS total_records
+FROM ccl_schema.ccl_final_classification chd
+JOIN Last_completed lc ON chd.epk_id = lc.epk_id
+GROUP BY lc.id_result_value;
