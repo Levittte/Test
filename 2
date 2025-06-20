@@ -9,8 +9,8 @@ SELECT
     lc.*,
     ct.*
 FROM historical_data h
-JOIN latest_calculations lc ON h.epk_id = lc.epk_id AND lc.rn = 1
-LEFT JOIN calculation_tracking ct ON ct.epk_id = lc.epk_id  -- связь по epk_id
+JOIN latest_calculations lc ON h.epk_id = lc.epk_id AND lc.rn = 1  -- последний расчет
+LEFT JOIN calculation_tracking ct ON ct.calculation_id = lc.id       -- LEFT JOIN, чтобы не потерять записи без tracking
 WHERE 
-    ct.status_code = 'for verification'
-    OR lc.status = 'on verification'
+    ct.status_code = 'for verification'  -- условие по tracking
+    OR lc.status = 'for verification'    -- или условие по самому расчету
