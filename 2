@@ -1,0 +1,16 @@
+WITH latest_calculations AS (
+    SELECT 
+        c.*,
+        ROW_NUMBER() OVER (PARTITION BY epk_id ORDER BY created_at DESC) AS rn
+    FROM calculation c
+)
+SELECT 
+    h.*,
+    lc.*,
+    ct.*
+FROM historical_data h
+JOIN latest_calculations lc ON h.epk_id = lc.epk_id AND lc.rn = 1
+LEFT JOIN calculation_tracking ct ON ct.epk_id = lc.epk_id  -- связь по epk_id
+WHERE 
+    ct.status_code = 'for verification'
+    OR lc.status = 'on verification'
