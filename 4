@@ -1,0 +1,38 @@
+-- Получаем все calculation_id с нужным статусом из tracking
+WITH verification_calculation_ids AS (
+    SELECT DISTINCT calculation_id
+    FROM ccl_calculation_tracking
+    WHERE status_code = 'for_verification'
+),
+-- Получаем epk_id из historical_data для фильтрации
+valid_epk_ids AS (
+    SELECT DISTINCT epk_id
+    FROM ccl_historical_data
+),
+-- Берем только последние расчеты для каждого epk_id, которые:
+-- 1. Есть в verification_calculation_ids
+-- 2. Их epk_id есть в valid_epk_ids
+latest_calculations AS (
+    SELECT
+        cck.*,
+        ROW_NUMBER() OVER (PARTITION BY cck.epk_id ORDER BY id DESC) AS rn
+    FROM ccl_calculation_kk cck
+    WHERE cck.id IN (SELECT calculation_id FROM verification_calculation_ids)
+      AND cck.epk_id IN (SELECT epk_id FROM valid_epk_ids)
+)
+SELECT DISTINCT
+    lc.id, 
+    lc.uir, 
+    lc.status_code, 
+    lc.id_result_value, 
+    lc.epk_id, 
+    lc.sudir_user_name, 
+    cac.id_reason_deviation, 
+    cac.liquidation,
+    crd.name_deviation
+FROM latest_calculations lc
+JOIN ccl_calculation_tracking ct ON ct.calculation_id = lc.id
+LEFT JOIN ccl_attributes_calculation cac ON lc.id_attributes = cac.id
+LEFT JOIN ccl_reason_deviation crd ON cac.id_reason_deviation = crd.id
+WHERE lc.rn = 1
+  AND ct.status_code = 'for_verification'
