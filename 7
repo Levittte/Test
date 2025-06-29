@@ -1,0 +1,53 @@
+import javax.servlet.http.HttpServletRequest;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.Response;
+import javax.ws.rs.ext.ExceptionMapper;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.stereotype.Component;
+
+@Component
+public class AccessDeniedExceptionMapper implements ExceptionMapper<AccessDeniedException> {
+
+    private final AuditService auditService;
+
+    @Context  // Jersey автоматически внедрит HttpServletRequest
+    private HttpServletRequest request;
+
+    public AccessDeniedExceptionMapper(AuditService auditService) {
+        this.auditService = auditService;
+    }
+
+    @Override
+    public Response toResponse(AccessDeniedException exception) {
+        // Получаем IP-адрес клиента
+        String clientIp = getClientIpAddress(request);
+
+        // Формируем сообщение для аудита с IP-адресом
+        String auditMessage = String.format("Access denied for IP %s: %s", 
+                                          clientIp, exception.getMessage());
+
+        // Отправляем событие в аудит-сервис
+        auditService.sendEvent(auditMessage);
+
+        // Возвращаем HTTP 400 с сообщением об ошибке
+        return Response
+                .status(Response.Status.BAD_REQUEST)
+                .entity("Access denied: " + exception.getMessage())
+                .build();
+    }
+
+    private String getClientIpAddress(HttpServletRequest request) {
+        // Стандартный способ получения IP с учетом прокси и заголовков
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("Proxy-Client-IP");
+        }
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("WL-Proxy-Client-IP");
+        }
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getRemoteAddr();
+        }
+        return ip;
+    }
+}
