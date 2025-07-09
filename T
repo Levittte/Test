@@ -1,0 +1,26 @@
+public static String getClientIp(HttpServletRequest request) {
+    // 1. Проверяем X-Real-IP (если Nginx настроен)
+    String ip = request.getHeader("X-Real-IP");
+    
+    // 2. Если нет, проверяем X-Forwarded-For (может содержать цепочку IP)
+    if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+        ip = request.getHeader("X-Forwarded-For");
+    }
+    
+    // 3. Если X-Forwarded-For содержит несколько IP, берем первый (исходный клиентский)
+    if (ip != null && ip.contains(",")) {
+        ip = ip.split(",")[0].trim();
+    }
+    
+    // 4. Если всё ещё не нашли, берем стандартный remote IP
+    if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+        ip = request.getRemoteAddr();
+    }
+    
+    // 5. Обработка IPv6 localhost (0:0:0:0:0:0:0:1 → 127.0.0.1)
+    if ("0:0:0:0:0:0:0:1".equals(ip)) {
+        ip = "127.0.0.1";
+    }
+    
+    return ip;
+}
