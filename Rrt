@@ -1,0 +1,24 @@
+WITH existing_calculations AS (
+    SELECT epk_id
+    FROM calculations
+    WHERE status = 'need info'
+    AND created_at >= '2023-06-10' 
+    AND created_at < '2023-06-11'
+),
+
+problematic_epks AS (
+    SELECT DISTINCT c.epk_id
+    FROM calculations c
+    JOIN existing_calculations ec ON c.epk_id = ec.epk_id
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM calculations c2
+        WHERE c2.epk_id = c.epk_id
+        AND c2.status = 'completed'
+    )
+)
+
+SELECT *
+FROM calculations
+WHERE epk_id IN (SELECT epk_id FROM problematic_epks)
+ORDER BY epk_id, created_at;
