@@ -19,3 +19,13 @@ private Field<Integer> createValidityCheck(
            .otherwise(0)
     ).asField();
 }
+
+rereturn DSL.choose()
+        .when(DSL.exists(
+            DSL.selectOne()
+               .from(table)
+               .where(codeField.eq(codeValue))
+               .and(validityCondition)
+        ), DSL.inline(1))  // Исправлено!
+        .otherwise(DSL.inline(0))  // Исправлено!
+        .as("check_" + table.getName());
