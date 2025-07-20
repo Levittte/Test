@@ -1,0 +1,21 @@
+private Field<Integer> createValidityCheck(
+    Object value, 
+    Table<?> table, 
+    Field<String> codeField,
+    LocalDate date
+) {
+    String codeValue = value.toString();
+    Condition validityCondition = getValidityCondition(table, date);
+    
+    // Используем DSL.choose() вместо DSL.when() с правильным синтаксисом
+    return DSL.select(
+        DSL.choose()
+           .when(DSL.exists(
+               DSL.selectOne()
+                  .from(table)
+                  .where(codeField.eq(codeValue))
+                  .and(validityCondition)
+           ), 1)
+           .otherwise(0)
+    ).asField();
+}
