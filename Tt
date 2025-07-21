@@ -1,0 +1,32 @@
+<changeSet id="20240301-01" author="your_name">
+    <preConditions onFail="MARK_RAN">
+        <!-- Проверяем, что FK существует -->
+        <foreignKeyConstraintExists 
+            foreignKeyName="fk_order_customer" 
+            foreignKeyTableName="orders"/>
+            
+        <!-- Проверяем, что текущая стратегия НЕ CASCADE -->
+        <sqlCheck expectedResult="0">
+            SELECT COUNT(*) 
+            FROM information_schema.referential_constraints
+            WHERE constraint_name = 'fk_order_customer'
+            AND table_name = 'orders'
+            AND delete_rule = 'CASCADE'
+        </sqlCheck>
+    </preConditions>
+    
+    <comment>Change orders.customer_id FK to CASCADE on delete</comment>
+    
+    <dropForeignKeyConstraint 
+        baseTableName="orders"
+        constraintName="fk_order_customer"/>
+        
+    <addForeignKeyConstraint 
+        baseTableName="orders"
+        baseColumnNames="customer_id"
+        referencedTableName="customers"
+        referencedColumnNames="id"
+        constraintName="fk_order_customer"
+        onDelete="CASCADE"
+        onUpdate="NO ACTION"/>
+</changeSet>
