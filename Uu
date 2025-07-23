@@ -1,0 +1,11 @@
+dsl.with("deleted_calcs")
+   .as(dsl.deleteFrom(CALCULATION)
+          .where(CALCULATION.STATUS.eq("completed"))
+          .returning(CALCULATION.ID_ATTRIBUTES))
+   .deleteFrom(ATTRIBUTES)
+   .where(exists(
+       dsl.selectOne()
+          .from(table(name("deleted_calcs")))
+          .where(field("deleted_calcs.id_attributes", Long.class).eq(ATTRIBUTES.ID))
+   ))
+   .execute();
