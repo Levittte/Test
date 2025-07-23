@@ -9,3 +9,21 @@ dsl.with("deleted_calcs")
           .where(field("deleted_calcs.id_attributes", Long.class).eq(ATTRIBUTES.ID))
    ))
    .execute();
+
+
+// 1. Создаем CTE
+WithStep withStep = dsl.with("deleted_calcs")
+    .as(dsl.deleteFrom(CALCULATION)
+        .where(CALCULATION.STATUS.eq("completed"))
+        .returning(CALCULATION.ID_ATTRIBUTES));
+
+// 2. Получаем ссылку на CTE таблицу
+Table<Record1<Long>> deletedCalcs = withStep.asTable("deleted_calcs");
+
+// 3. Выполняем удаление из ATTRIBUTES
+dsl.deleteFrom(ATTRIBUTES)
+    .where(ATTRIBUTES.ID.in(
+        dsl.select(deletedCalcs.field("id_attributes", Long.class))
+           .from(deletedCalcs)
+    ))
+    .execute();
