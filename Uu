@@ -27,3 +27,22 @@ dsl.deleteFrom(ATTRIBUTES)
            .from(deletedCalcs)
     ))
     .execute();
+
+
+import static org.jooq.impl.DSL.*;
+
+// 1. Объявляем CTE
+CommonTableExpression<Record1<Long>> deletedCalcs = name("deleted_calcs")
+    .fields("id_attributes")
+    .as(dsl.deleteFrom(CALCULATION)
+          .where(CALCULATION.STATUS.eq("completed"))
+          .returning(CALCULATION.ID_ATTRIBUTES));
+
+// 2. Выполняем запрос с CTE
+dsl.with(deletedCalcs)
+   .deleteFrom(ATTRIBUTES)
+   .where(ATTRIBUTES.ID.in(
+       select(deletedCalcs.field("id_attributes", Long.class))
+       .from(deletedCalcs)
+   ))
+   .execute();
