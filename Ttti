@@ -1,0 +1,24 @@
+public void deleteCompletedCalculationsWithAttributes(DSLContext ctx) {
+    ctx.with("completed_ids").as(
+            select(CALCULATION.ID)
+               .from(CALCULATION)
+               .where(CALCULATION.STATUS.eq("completed"))
+        )
+        .deleteFrom(ATTRIBUTES_CALCULATION)
+        .where(ATTRIBUTES_CALCULATION.ID.in(
+            select(field("id", Integer.class)).from("completed_ids")
+        ))
+        .execute();
+    
+    // Второй DELETE использует те же CTE
+    ctx.with("completed_ids").as(
+            select(CALCULATION.ID)
+               .from(CALCULATION)
+               .where(CALCULATION.STATUS.eq("completed"))
+        )
+        .deleteFrom(CALCULATION)
+        .where(CALCULATION.ID.in(
+            select(field("id", Integer.class)).from("completed_ids")
+        ))
+        .execute();
+}
