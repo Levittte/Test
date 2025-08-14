@@ -1,0 +1,15 @@
+WITH ranked_calculations AS (
+    SELECT 
+        *,
+        ROW_NUMBER() OVER (PARTITION BY [id_записи] ORDER BY [дата_расчета] DESC) AS rn
+    FROM 
+        ccl_calculation_kk
+    WHERE 
+        status = 'completed'
+)
+SELECT 
+    * 
+FROM 
+    ranked_calculations
+WHERE 
+    rn = 1;
