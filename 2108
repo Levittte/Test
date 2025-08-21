@@ -65,4 +65,55 @@ public class RandomMultipartController {
                      generateRandomTextContent());
         addRandomFile(multipartData, "data.json", "application/json", 
                      generateRandomJsonContent());
-        addRandomFile(multipartData, "report.csv", "text/csv
+        addRandomFile(multipartData, "report.csv", "text/csv", 
+                     generateRandomCsvContent());
+        
+        return multipartData;
+    }
+
+    private void addRandomFile(MultiValueMap<String, Object> multipartData, 
+                             String filename, String contentType, String content) {
+        ByteArrayResource resource = new ByteArrayResource(content.getBytes()) {
+            @Override
+        public String getFilename() {
+                return filename;
+            }
+        };
+        
+        multipartData.add(filename, resource);
+    }
+
+    private String generateRandomTextContent() {
+        String[] texts = {
+            "Сгенерированный текстовый файл",
+            "Случайное содержимое: " + System.currentTimeMillis(),
+            "UUID запроса был обработан успешно",
+            "Результат обработки: " + random.nextInt(10000)
+        };
+        return texts[random.nextInt(texts.length)];
+    }
+
+    private String generateRandomJsonContent() {
+        return String.format("""
+            {
+                "responseId": "%s",
+                "generatedAt": %d,
+                "isSuccessful": %s,
+                "data": {"field1": "value1", "field2": %d}
+            }
+            """, UUID.randomUUID(), System.currentTimeMillis(), 
+            random.nextBoolean(), random.nextInt(100));
+    }
+
+    private String generateRandomCsvContent() {
+        return String.format("""
+            id,name,value,timestamp
+            %d,item_%d,%d,%d
+            %d,item_%d,%d,%d
+            %d,item_%d,%d,%d
+            """, 
+            random.nextInt(100), random.nextInt(100), random.nextInt(1000), System.currentTimeMillis(),
+            random.nextInt(100), random.nextInt(100), random.nextInt(1000), System.currentTimeMillis(),
+            random.nextInt(100), random.nextInt(100), random.nextInt(1000), System.currentTimeMillis());
+    }
+}
