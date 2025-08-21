@@ -1,0 +1,42 @@
+@Service
+public class SpringMultipartService {
+    
+    @Autowired
+    private RestTemplate restTemplate; // Стандартный RestTemplate
+    
+    public String extractPartAsBase64(String url, String partName) {
+        try {
+            // ✅ Spring автоматически сконвертирует multipart в MultiValueMap
+            MultiValueMap<String, Object> parts = restTemplate.postForObject(
+                url, 
+                null, 
+                MultiValueMap.class
+            );
+            
+            if (parts != null && parts.containsKey(partName)) {
+                Object part = parts.getFirst(partName);
+                return convertToBase64(part);
+            }
+            
+        } catch (Exception e) {
+            return parseManually(url, partName);
+        }
+        return null;
+    }
+    
+    private String convertToBase64(Object part) {
+        if (part instanceof byte[]) {
+            return Base64.getEncoder().encodeToString((byte[]) part);
+        } else if (part instanceof Resource) {
+            try {
+                byte[] bytes = ((Resource) part).getInputStream().readAllBytes();
+                return Base64.getEncoder().encodeToString(bytes);
+            } catch (IOException e) {
+                throw new RuntimeException("Error reading resource", e);
+            }
+        } else if (part instanceof String) {
+            return Base64.getEncoder().encodeToString(((String) part).getBytes());
+        }
+        throw new IllegalArgumentException("Unsupported part type: " + part.getClass());
+    }
+}
