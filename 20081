@@ -1,0 +1,58 @@
+import org.springframework.http.*;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.core.io.ByteArrayResource;
+import org.apache.commons.codec.binary.Base64;
+
+@Service
+public class MultipartService {
+
+    @Autowired
+    private RestTemplate restTemplate;
+
+    public String getPartAsBase64(String url, String partName) {
+        // Указываем, что ожидаем multipart ответ
+        HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(Collections.singletonList(MediaType.MULTIPART_FORM_DATA));
+        
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+
+        // Получаем ответ как MultiValueMap
+        ResponseEntity<MultiValueMap<String, Object>> response = restTemplate.exchange(
+            url,
+            HttpMethod.POST, // или GET
+            entity,
+            new ParameterizedTypeReference<MultiValueMap<String, Object>>() {}
+        );
+
+        MultiValueMap<String, Object> multipartData = response.getBody();
+        
+        if (multipartData != null && multipartData.containsKey(partName)) {
+            Object part = multipartData.getFirst(partName);
+            return convertPartToBase64(part);
+        }
+        
+        throw new RuntimeException("Часть '" + partName + "' не найдена в ответе");
+    }
+
+    private String convertPartToBase64(Object part) {
+        if (part instanceof byte[]) {
+            // Если часть уже в виде byte[]
+            return Base64.encodeBase64String((byte[]) part);
+        } else if (part instanceof ByteArrayResource) {
+            // Если часть как ресурс
+            ByteArrayResource resource = (ByteArrayResource) part;
+            try {
+                return Base64.encodeBase64String(resource.getByteArray());
+            } catch (IOException e) {
+                throw new RuntimeException("Ошибка чтения ресурса", e);
+            }
+        } else if (part instanceof String) {
+            // Если это текстовая часть
+            return Base64.encodeBase64String(((String) part).getBytes(StandardCharsets.UTF_8));
+        } else {
+            throw new RuntimeException("Неизвестный тип части: " + part.getClass());
+        }
+    }
+}
