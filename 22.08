@@ -1,0 +1,12 @@
+import org.springframework.http.MediaType;
+
+private String extractBoundaryWithSpring(String contentType) {
+    MediaType mediaType = MediaType.parseMediaType(contentType);
+    String boundary = (String) mediaType.getParameters().get("boundary");
+    
+    if (boundary == null) {
+        throw new IllegalArgumentException("Boundary not found");
+    }
+    
+    return boundary;
+}
