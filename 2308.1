@@ -1,0 +1,77 @@
+import org.apache.commons.fileupload.MultipartStream;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Base64;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+
+@Service
+public class MultipartBase64Service {
+    
+    /**
+     * Прямое извлечение части multipart ответа в Base64
+     */
+    public String extractPartAsBase64(ResponseEntity<byte[]> response, String partName) throws IOException {
+        // Валидация
+        validateMultipartResponse(response);
+        
+        // Прямое извлечение
+        byte[] partBytes = extractPartBytesDirectly(
+            response.getBody(),
+            getBoundaryFromContentType(response.getHeaders().getContentType().toString()),
+            partName
+        );
+        
+        return Base64.getEncoder().encodeToString(partBytes);
+    }
+    
+    private byte[] extractPartBytesDirectly(byte[] multipartData, String boundary, String targetPartName) 
+            throws IOException {
+        
+        try (ByteArrayInputStream input = new ByteArrayInputStream(multipartData);
+             MultipartStream multipartStream = new MultipartStream(input, boundary.getBytes())) {
+            
+            boolean nextPart = multipartStream.skipPreamble();
+            while (nextPart) {
+                String headers = multipartStream.readHeaders();
+                
+                if (isTargetPart(headers, targetPartName)) {
+                    ByteArrayOutputStream output = new ByteArrayOutputStream();
+                    multipartStream.readBodyData(output);
+                    return output.toByteArray();
+                }
+                
+                nextPart = multipartStream.readBoundary();
+            }
+        }
+        
+        throw new IllegalArgumentException("Part '" + targetPartName + "' not found in multipart response");
+    }
+    
+    private void validateMultipartResponse(ResponseEntity<byte[]> response) {
+        if (response.getBody() == null) {
+            throw new IllegalArgumentException("Response body is empty");
+        }
+        
+        String contentType = response.getHeaders().getContentType().toString();
+        if (!contentType.startsWith("multipart/")) {
+            throw new IllegalArgumentException("Response is not multipart: " + contentType);
+        }
+    }
+    
+    private String getBoundaryFromContentType(String contentType) {
+        Pattern pattern = Pattern.compile("boundary=([^;\\s\"]+)");
+        Matcher matcher = pattern.matcher(contentType);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        throw new IllegalArgumentException("Boundary not found in Content-Type: " + contentType);
+    }
+    
+    private boolean isTargetPart(String headers, String targetName) {
+        return headers.contains("name=\"" + targetName + "\"");
+    }
+}
