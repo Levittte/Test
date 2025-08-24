@@ -1,0 +1,49 @@
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
+
+@RestController
+public class MultipartController {
+
+    @GetMapping(value = "/manual-multipart", produces = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<byte[]> getManualMultipart() {
+        String boundary = "----Boundary_" + UUID.randomUUID().toString().replace("-", "");
+        
+        StringBuilder multipartBuilder = new StringBuilder();
+        
+        // Часть 1: Текстовые данные
+        multipartBuilder.append("--").append(boundary).append("\r\n");
+        multipartBuilder.append("Content-Disposition: form-data; name=\"message\"\r\n");
+        multipartBuilder.append("Content-Type: text/plain; charset=UTF-8\r\n\r\n");
+        multipartBuilder.append("Привет, это multipart ответ!\r\n");
+        
+        // Часть 2: JSON данные
+        multipartBuilder.append("--").append(boundary).append("\r\n");
+        multipartBuilder.append("Content-Disposition: form-data; name=\"jsonData\"\r\n");
+        multipartBuilder.append("Content-Type: application/json\r\n\r\n");
+        multipartBuilder.append("{\"status\": \"success\", \"items\": [1, 2, 3]}\r\n");
+        
+        // Часть 3: Файловые данные
+        multipartBuilder.append("--").append(boundary).append("\r\n");
+        multipartBuilder.append("Content-Disposition: form-data; name=\"file\"; filename=\"data.txt\"\r\n");
+        multipartBuilder.append("Content-Type: text/plain\r\n\r\n");
+        multipartBuilder.append("Содержимое файла\n");
+        multipartBuilder.append("Вторая строка файла\n");
+        multipartBuilder.append("Третья строка\r\n");
+        
+        // Завершающий boundary
+        multipartBuilder.append("--").append(boundary).append("--\r\n");
+
+        // Конвертируем в байты
+        byte[] content = multipartBuilder.toString().getBytes(StandardCharsets.UTF_8);
+
+        // Устанавливаем заголовки
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("multipart/form-data; boundary=" + boundary));
+        headers.setContentLength(content.length);
+
+        return new ResponseEntity<>(content, headers, HttpStatus.OK);
+    }
+}
