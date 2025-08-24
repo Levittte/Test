@@ -1,0 +1,60 @@
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.*;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import java.util.Base64;
+
+@RestController
+public class MultipartController {
+
+    @GetMapping(value = "/multipart-with-files", produces = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public MultiValueMap<String, Object> getMultipartWithFiles() {
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        
+        // Текстовые данные
+        body.add("textData", "Простой текстовый контент");
+        
+        // JSON данные
+        body.add("jsonData", new HttpEntity<>(
+            "{\"operation\": \"multipart\", \"success\": true}",
+            new HttpHeaders() {{
+                setContentType(MediaType.APPLICATION_JSON);
+            }}
+        ));
+        
+        // Файл с обычным содержимым
+        String fileContent = "Содержимое текстового файла\n" +
+                           "Вторая строка\n" +
+                           "Третья строка";
+        body.add("textFile", new HttpEntity<>(
+            new ByteArrayResource(fileContent.getBytes()) {
+                @Override
+                public String getFilename() {
+                    return "content.txt";
+                }
+            },
+            new HttpHeaders() {{
+                setContentType(MediaType.TEXT_PLAIN);
+            }}
+        ));
+        
+        // Файл с Base64 содержимым
+        String base64Content = Base64.getEncoder().encodeToString("Base64 encoded content".getBytes());
+        body.add("base64File", new HttpEntity<>(
+            new ByteArrayResource(base64Content.getBytes()) {
+                @Override
+                public String getFilename() {
+                    return "encoded.b64";
+                }
+            },
+            new HttpHeaders() {{
+                setContentType(MediaType.TEXT_PLAIN);
+                set("Content-Transfer-Encoding", "base64");
+            }}
+        ));
+
+        return body;
+    }
+}
