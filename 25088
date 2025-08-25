@@ -1,0 +1,26 @@
+import org.apache.commons.fileupload.MultipartStream;
+import org.springframework.http.*;
+import org.springframework.web.client.RestTemplate;
+import java.io.*;
+
+public class UltraCompactMultipart {
+    
+    public static String getPartBase64(RestTemplate rt, String url, String partName) throws IOException {
+        ResponseEntity<byte[]> r = rt.exchange(url, HttpMethod.GET, null, byte[].class);
+        String ct = r.getHeaders().getFirst("Content-Type");
+        String b = ct.substring(ct.indexOf("boundary=") + 9).replace("\"", "").split("[;\\s]")[0];
+        
+        try (ByteArrayInputStream in = new ByteArrayInputStream(r.getBody())) {
+            MultipartStream ms = new MultipartStream(in, b.getBytes());
+            for (boolean n = ms.skipPreamble(); n; n = ms.readBoundary()) {
+                if (ms.readHeaders().contains("name=\"" + partName + "\"")) {
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    ms.readBodyData(out);
+                    return java.util.Base64.getEncoder().encodeToString(out.toByteArray());
+                }
+                ms.discardBodyData();
+            }
+        }
+        throw new IOException("Part not found: " + partName);
+    }
+}
