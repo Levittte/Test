@@ -1,0 +1,37 @@
+import org.glassfish.jersey.media.multipart.MultiPart;
+import org.glassfish.jersey.media.multipart.BodyPart;
+import org.glassfish.jersey.media.multipart.file.FileDataBodyPart;
+
+@Path("/files")
+@Produces("multipart/mixed")
+public class FileResource {
+
+    @GET
+    @Path("/multi")
+    public Response getMultiPartData() {
+        MultiPart multiPart = new MultiPart();
+        
+        // Добавляем текстовую часть
+        BodyPart textPart = new BodyPart("This is text content", MediaType.TEXT_PLAIN_TYPE);
+        textPart.setContentDisposition(
+            FormDataContentDisposition.name("textField")
+                .fileName("text.txt")
+                .build()
+        );
+        multiPart.bodyPart(textPart);
+        
+        // Добавляем JSON часть
+        BodyPart jsonPart = new BodyPart("{\"name\":\"John\",\"age\":30}", 
+                                       MediaType.APPLICATION_JSON_TYPE);
+        jsonPart.setContentDisposition(
+            FormDataContentDisposition.name("jsonData")
+                .fileName("data.json")
+                .build()
+        );
+        multiPart.bodyPart(jsonPart);
+        
+        return Response.ok(multiPart)
+                .header("X-Custom-Header", "multipart-response")
+                .build();
+    }
+}
