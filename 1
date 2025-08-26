@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: send-api-requests
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      containers:
+      - name: api-client
+        image: curlimages/curl
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          # Читаем значения из файла и отправляем запросы
+          while IFS= read -r value; do
+            # Отправляем POST запрос с каждым значением
+            curl -X POST \
+              -H "Content-Type: application/json" \
+              -d "{\"id\": \"$value\", \"action\": \"process\"}" \
+              --silent \
+              --output /dev/null \
+              http://your-api-service.your-namespace.svc:8080/api/process
+              
+            # Пауза между запросами
+            sleep 0.1
+              
+          done < /data/values.txt
+          
+          echo "✅ Все запросы отправлены успешно!"
+        volumeMounts:
+        - name: data-volume
+          mountPath: /data
+      volumes:
+      - name: data-volume
+        configMap:
+          name: request-data
+      restartPolicy: Never
