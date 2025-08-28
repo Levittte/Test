@@ -1,0 +1,43 @@
+import lombok.Data;
+import java.util.List;
+
+@Data
+public class MlShareholderRequest {
+    private List<ShareholderData> data;
+    
+    @Data
+    public static class ShareholderData {
+        private String id;
+        private String epk_id; // EPK ID
+        private String inn;    // ИНН контрагента
+        private ShareholderAttributes attributes;
+    }
+    
+    @Data
+    public static class ShareholderAttributes {
+        private String file; // файл в формате base64
+    }
+}
+
+
+import lombok.Data;
+import java.util.List;
+
+@Data
+public class MlShareholderResponse {
+    private String docName;
+    private ExtractedData extractedData;
+    
+    @Data
+    public static class ExtractedData {
+        private String total_capital;
+        private List<Shareholder> shareholders;
+    }
+    
+    @Data
+    public static class Shareholder {
+        private String name;
+        private String share_size;
+        private String ratio;
+    }
+}
