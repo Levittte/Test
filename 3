@@ -1,0 +1,159 @@
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import java.util.Date;
+import java.util.UUID;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+@ExtendWith(MockitoExtension.class)
+class ElgoResponseLogicServiceTest {
+
+    @Mock
+    private KafkaProxyApi kafkaProxyApi;
+    
+    @Mock
+    private ElgoInfoService elgoInfoService;
+    
+    @Mock
+    private CalculationService calculationService;
+    
+    @InjectMocks
+    private ElgoResponseLogicService elgoResponseLogicService;
+    
+    private Calculation calculation;
+    private ElgoResponseDto elgoResponseDto;
+    private ElgoResponseDataDto elgoResponseDataDto;
+    private ElgoInfo elgoInfo;
+    
+    @BeforeEach
+    void setUp() {
+        calculation = new Calculation();
+        
+        // Создаем Status для успешного и неуспешного сценария
+        Status successStatus = new Status();
+        successStatus.setStatusCode(0);
+        successStatus.setIntegrationError(null);
+        
+        Status errorStatus = new Status();
+        errorStatus.setStatusCode(1);
+        errorStatus.setIntegrationError("Integration error");
+        
+        // Создаем ElgoResponseDataDto
+        elgoResponseDataDto = new ElgoResponseDataDto();
+        elgoResponseDataDto.setConsumerRequestId(UUID.randomUUID().toString());
+        elgoResponseDataDto.setLink("https://example.com/document");
+        
+        // Создаем ElgoResponseDto
+        elgoResponseDto = new ElgoResponseDto();
+        elgoResponseDto.setElgoResponseDataDto(elgoResponseDataDto);
+        
+        // Создаем ElgoInfo
+        elgoInfo = new ElgoInfo();
+        elgoInfo.setId(1L);
+    }
+
+    @Test
+    void updateWithResponse_SuccessfulResponse_ShouldProcessSuccessfully() {
+        // Arrange
+        elgoResponseDataDto.setStatus(successStatus);
+        
+        when(elgoInfoService.getElgoInfoByRequestId(any(UUID.class)))
+            .thenReturn(elgoInfo);
+        when(elgoInfoService.updateElgoInfo(any(ElgoInfo.class)))
+            .thenReturn(elgoInfo);
+
+        // Act
+        ElgoInfo result = elgoResponseLogicService.updateWithResponse(calculation, elgoResponseDto);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(RequestStatus.COMPLETED, result.getStatus());
+        assertNotNull(result.getUpdatedAt());
+        assertEquals(elgoResponseDataDto, result.getResponse());
+        
+        verify(kafkaProxyApi, times(1))
+            .requestToApiForExtractByDocumentLink(eq(calculation), any(DocumentLinkDto.class), eq(RequestType.ECN_FIND_EXTRACTION));
+        verify(calculationService, never()).update(any(Calculation.class));
+        verify(elgoInfoService, times(1)).updateElgoInfo(elgoInfo);
+    }
+
+    @Test
+    void updateWithResponse_FailedResponse_ShouldSetFailResult() {
+        // Arrange
+        elgoResponseDataDto.setStatus(errorStatus);
+        
+        when(elgoInfoService.getElgoInfoByRequestId(any(UUID.class)))
+            .thenReturn(elgoInfo);
+        when(elgoInfoService.updateElgoInfo(any(ElgoInfo.class)))
+            .thenReturn(elgoInfo);
+
+        // Act
+        ElgoInfo result = elgoResponseLogicService.updateWithResponse(calculation, elgoResponseDto);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(RequestStatus.COMPLETED, result.getStatus());
+        
+        verify(calculationService, times(1)).update(calculation);
+        verify(kafkaProxyApi, never())
+            .requestToApiForExtractByDocumentLink(any(Calculation.class), any(DocumentLinkDto.class), any(RequestType.class));
+        verify(elgoInfoService, times(1)).updateElgoInfo(elgoInfo);
+        
+        // Проверяем, что статус расчета установлен в ON_VERIFICATION
+        assertEquals(StatusCode.ON_VERIFICATION, calculation.getStatusCode());
+    }
+
+    @Test
+    void updateWithResponse_NullResponseData_ShouldThrowException() {
+        // Arrange
+        elgoResponseDto.setElgoResponseDataDto(null);
+        
+        // Act & Assert
+        assertThrows(NullPointerException.class, () -> {
+            elgoResponseLogicService.updateWithResponse(calculation, elgoResponseDto);
+        });
+    }
+
+    @Test
+    void updateWithResponse_ElgoInfoNotFound_ShouldThrowException() {
+        // Arrange
+        elgoResponseDataDto.setStatus(successStatus);
+        
+        when(elgoInfoService.getElgoInfoByRequestId(any(UUID.class)))
+            .thenReturn(null);
+
+        // Act & Assert
+        assertThrows(RuntimeException.class, () -> {
+            elgoResponseLogicService.updateWithResponse(calculation, elgoResponseDto);
+        });
+    }
+
+    @Test
+    void updateWithResponse_IntegrationError_ShouldSetFailResult() {
+        // Arrange
+        Status statusWithIntegrationError = new Status();
+        statusWithIntegrationError.setStatusCode(0);
+        statusWithIntegrationError.setIntegrationError("Some integration error");
+        
+        elgoResponseDataDto.setStatus(statusWithIntegrationError);
+        
+        when(elgoInfoService.getElgoInfoByRequestId(any(UUID.class)))
+            .thenReturn(elgoInfo);
+        when(elgoInfoService.updateElgoInfo(any(ElgoInfo.class)))
+            .thenReturn(elgoInfo);
+
+        // Act
+        ElgoInfo result = elgoResponseLogicService.updateWithResponse(calculation, elgoResponseDto);
+
+        // Assert
+        assertNotNull(result);
+        verify(calculationService, times(1)).update(calculation);
+        verify(kafkaProxyApi, never())
+            .requestToApiForExtractByDocumentLink(any(Calculation.class), any(DocumentLinkDto.class), any(RequestType.class));
+    }
+}
