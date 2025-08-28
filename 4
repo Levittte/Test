@@ -1,0 +1,193 @@
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Date;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+@ExtendWith(MockitoExtension.class)
+class ResponseLogicServiceTest {
+
+    private static final Logger log = LoggerFactory.getLogger(ResponseLogicServiceTest.class);
+
+    @Mock
+    private ElgoInfoService elgoInfoService;
+
+    @Mock
+    private ApiRequestInfoService apiRequestInfoService;
+
+    @Mock
+    private RetryableTasksService retryableTasksService;
+
+    @Mock
+    private KafkaRequestInfoService kafkaRequestInfoService;
+
+    @Mock
+    private ElgoResponseLogicService elgoResponseLogicService;
+
+    @InjectMocks
+    private ResponseLogicService responseLogicService;
+
+    private ResponseWrapper<AbstractTransferDto> createTestWrapper(RequestType requestType) {
+        ResponseWrapper<AbstractTransferDto> wrapper = new ResponseWrapper<>();
+        wrapper.setUuid("test-uuid-123");
+        wrapper.setRequestType(requestType);
+        return wrapper;
+    }
+
+    @Test
+    void mapRequestElgoResponse_ShouldUpdateElgoInfoAndCreateApiRequestInfo() {
+        // Arrange
+        ResponseWrapper<AbstractTransferDto> wrapper = createTestWrapper(RequestType.ELGO_REQUEST_EXTRACT_USALE);
+        ElgoInfo elgoInfo = new ElgoInfo();
+        Calculation calculation = new Calculation();
+        calculation.setId(1L);
+
+        when(elgoInfoService.getElgoInfoByRequestUuid(wrapper.getUuid())).thenReturn(elgoInfo);
+        when(apiRequestInfoService.getCalculationByRequestUuid(wrapper.getUuid())).thenReturn(calculation);
+
+        // Act
+        responseLogicService.mapRequestElgoResponse(wrapper);
+
+        // Assert
+        verify(elgoInfoService, times(1)).getElgoInfoByRequestUuid(wrapper.getUuid());
+        verify(elgoInfoService, times(1)).updateElgoInfo(elgoInfo);
+        verify(apiRequestInfoService, times(1)).createApiRequestInfo(any(ApiRequestInfo.class));
+        
+        assertNotNull(elgoInfo.getUpdatedAt());
+    }
+
+    @Test
+    void mapRequestElgoErrorResponse_ShouldHandleErrorAndUpdateStatusToFail() {
+        // Arrange
+        ResponseWrapper<AbstractTransferDto> wrapper = createTestWrapper(RequestType.ELGO_REQUEST_EXTRACT_USALE);
+        Calculation calculation = new Calculation();
+        calculation.setId(1L);
+        ElgoInfo elgoInfo = new ElgoInfo();
+
+        when(apiRequestInfoService.getCalculationByRequestWithDeduplication(wrapper.getUuid(), wrapper.getRequestType()))
+            .thenReturn(calculation);
+        when(elgoInfoService.getElgoInfoByRequestUuid(wrapper.getUuid())).thenReturn(elgoInfo);
+
+        // Act
+        responseLogicService.mapRequestElgoErrorResponse(wrapper);
+
+        // Assert
+        verify(apiRequestInfoService, times(1)).getCalculationByRequestWithDeduplication(wrapper.getUuid(), wrapper.getRequestType());
+        verify(elgoInfoService, times(1)).getElgoInfoByRequestUuid(wrapper.getUuid());
+        verify(retryableTasksService, times(1)).updateRequestStatus(wrapper.getUuid(), RequestStatus.FAIL);
+        verify(elgoInfoService, times(1)).updateStatus(elgoInfo, RequestStatus.FAIL);
+        verify(apiRequestInfoService, times(1)).createApiRequestInfo(any(ApiRequestInfo.class));
+    }
+
+    @Test
+    void mapResponseElgoResponse_ShouldProcessSuccessfulResponse() {
+        // Arrange
+        ResponseWrapper<AbstractTransferDto> wrapper = createTestWrapper(RequestType.ELGO_RESPONSE_EXTRACT_USALE);
+        
+        ElgoResponseDto elgoResponseDto = new ElgoResponseDto();
+        KafkaRequestInfo kafkaRequestInfo = new KafkaRequestInfo();
+        elgoResponseDto.setKafkaRequestInfo(kafkaRequestInfo);
+        
+        wrapper.setData(elgoResponseDto);
+        
+        Calculation calculation = new Calculation();
+        calculation.setId(1L);
+
+        when(apiRequestInfoService.getCalculationWithDeduplication(wrapper.getUuid(), wrapper.getRequestType()))
+            .thenReturn(calculation);
+        when(elgoResponseLogicService.updateWithResponse(any(Calculation.class), any(ElgoResponseDto.class)))
+            .thenReturn(new ElgoInfo());
+
+        // Act
+        responseLogicService.mapResponseElgoResponse(wrapper);
+
+        // Assert
+        verify(apiRequestInfoService, times(1)).getCalculationWithDeduplication(wrapper.getUuid(), wrapper.getRequestType());
+        verify(kafkaRequestInfoService, times(1)).createKafkaRequestInfo(kafkaRequestInfo);
+        verify(elgoResponseLogicService, times(1)).updateWithResponse(calculation, elgoResponseDto);
+        verify(retryableTasksService, times(1)).updateRequestStatus(wrapper.getUuid(), RequestStatus.COMPLETED);
+        verify(apiRequestInfoService, times(1)).createApiRequestInfo(any(ApiRequestInfo.class));
+    }
+
+    @Test
+    void mapEcmResponse_ShouldCreateApiRequestInfo() {
+        // Arrange
+        ResponseWrapper<AbstractTransferDto> wrapper = createTestWrapper(RequestType.ECM_FIND_EXTRACT_USALE);
+        Calculation calculation = new Calculation();
+        calculation.setId(1L);
+
+        when(apiRequestInfoService.getCalculationByRequestUuid(wrapper.getUuid())).thenReturn(calculation);
+
+        // Act
+        responseLogicService.mapEcmResponse(wrapper);
+
+        // Assert
+        verify(apiRequestInfoService, times(1)).getCalculationByRequestUuid(wrapper.getUuid());
+        verify(apiRequestInfoService, times(1)).createApiRequestInfo(any(ApiRequestInfo.class));
+    }
+
+    @Test
+    void mapRequestElgoResponse_WhenElgoInfoNotFound_ShouldThrowException() {
+        // Arrange
+        ResponseWrapper<AbstractTransferDto> wrapper = createTestWrapper(RequestType.ELGO_REQUEST_EXTRACT_USALE);
+
+        when(elgoInfoService.getElgoInfoByRequestUuid(wrapper.getUuid())).thenReturn(null);
+
+        // Act & Assert
+        assertThrows(RuntimeException.class, () -> {
+            responseLogicService.mapRequestElgoResponse(wrapper);
+        });
+    }
+
+    @Test
+    void mapResponseElgoResponse_WhenCalculationNotFound_ShouldThrowException() {
+        // Arrange
+        ResponseWrapper<AbstractTransferDto> wrapper = createTestWrapper(RequestType.ELGO_RESPONSE_EXTRACT_USALE);
+        ElgoResponseDto elgoResponseDto = new ElgoResponseDto();
+        wrapper.setData(elgoResponseDto);
+
+        when(apiRequestInfoService.getCalculationWithDeduplication(wrapper.getUuid(), wrapper.getRequestType()))
+            .thenReturn(null);
+
+        // Act & Assert
+        assertThrows(RuntimeException.class, () -> {
+            responseLogicService.mapResponseElgoResponse(wrapper);
+        });
+    }
+
+    @Test
+    void mapRequestElgoErrorResponse_WhenCalculationNotFound_ShouldThrowException() {
+        // Arrange
+        ResponseWrapper<AbstractTransferDto> wrapper = createTestWrapper(RequestType.ELGO_REQUEST_EXTRACT_USALE);
+
+        when(apiRequestInfoService.getCalculationByRequestWithDeduplication(wrapper.getUuid(), wrapper.getRequestType()))
+            .thenReturn(null);
+
+        // Act & Assert
+        assertThrows(RuntimeException.class, () -> {
+            responseLogicService.mapRequestElgoErrorResponse(wrapper);
+        });
+    }
+
+    @Test
+    void mapEcmResponse_WhenCalculationNotFound_ShouldThrowException() {
+        // Arrange
+        ResponseWrapper<AbstractTransferDto> wrapper = createTestWrapper(RequestType.ECM_FIND_EXTRACT_USALE);
+
+        when(apiRequestInfoService.getCalculationByRequestUuid(wrapper.getUuid())).thenReturn(null);
+
+        // Act & Assert
+        assertThrows(RuntimeException.class, () -> {
+            responseLogicService.mapEcmResponse(wrapper);
+        });
+    }
+}
