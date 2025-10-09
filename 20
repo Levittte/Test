@@ -1,0 +1,33 @@
+@Configuration
+@EnableKafkaStreams
+public class KafkaStreamsConfig {
+
+    @Bean
+    public DefaultErrorHandler errorHandler(DeadLetterPublishingRecoverer deadLetterRecoverer) {
+        BackOff backOff = new FixedBackOff(1000L, 2L);
+        // ВАЖНО: передаем DeadLetterPublishingRecoverer в конструктор
+        return new DefaultErrorHandler(deadLetterRecoverer, backOff);
+    }
+
+    @Bean
+    public DeadLetterPublishingRecoverer deadLetterPublishingRecoverer(
+            KafkaOperations<String, Object> kafkaOperations) {
+        
+        return new DeadLetterPublishingRecoverer(kafkaOperations,
+            (record, exception) -> {
+                // Куда отправлять после исчерпания попыток
+                return new TopicPartition(record.topic() + ".dlt", record.partition());
+            });
+    }
+
+    @Bean
+    public KStream<String, String> buildStream(StreamsBuilder builder,
+                                             DefaultErrorHandler errorHandler) {
+        
+        KStream<String, String> stream = builder.stream("input-topic");
+        
+        return stream
+            .process(() -> new SafeRestApiProcessor())
+            .handleErrorsWith(errorHandler);
+    }
+}
