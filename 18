@@ -1,0 +1,49 @@
+public class DirectDlqStreams {
+
+    private static final String DLQ_TOPIC = "my-dlq-topic";
+    private static Producer<String, String> dlqProducer;
+
+    static {
+        Properties dlqProps = new Properties();
+        dlqProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        dlqProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        dlqProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        dlqProducer = new KafkaProducer<>(dlqProps);
+    }
+
+    public static void main(String[] args) {
+        StreamsBuilder builder = new StreamsBuilder();
+        
+        KStream<String, String> stream = builder.stream("input-topic");
+
+        stream.map((key, value) -> {
+            try {
+                // Business logic
+                String processed = processValue(value);
+                return KeyValue.pair(key, processed);
+            } catch (Exception e) {
+                // Прямая отправка в DLQ при ошибке
+                sendToDlq(key, value, e);
+                return null; // Пропускаем в основном потоке
+            }
+        }).filter((k, v) -> v != null) // Фильтруем успешные
+          .to("output-topic");
+
+        KafkaStreams streams = new KafkaStreams(builder.build(), getProperties());
+        streams.start();
+    }
+
+    private static void sendToDlq(String key, String value, Exception error) {
+        DlqMessage dlqMessage = new DlqMessage(key, value, error.getMessage());
+        ProducerRecord<String, String> record = 
+            new ProducerRecord<>(DLQ_TOPIC, key, dlqMessage.toJson());
+        
+        dlqProducer.send(record, (metadata, exception) -> {
+            if (exception != null) {
+                System.err.println("Failed to send to DLQ: " + exception.getMessage());
+            } else {
+                System.out.println("Message sent to DLQ: " + metadata.topic());
+            }
+        });
+    }
+}
