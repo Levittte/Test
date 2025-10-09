@@ -1,0 +1,27 @@
+@GET
+public List<String> getMessages(@QueryParam("count") Long messagesCount) {
+    try (Consumer<String, String> consumer = dlgConsumerFactory.createConsumer()) {
+        consumer.subscribe(Collections.singletonList("test1"));
+        consumer.seekToBeginning(consumer.assignment());
+        consumer.poll(Duration.ofMillis(10000)); // initial poll
+        
+        return pollMessages(consumer, messagesCount);
+    }
+}
+
+private List<String> pollMessages(Consumer<String, String> consumer, Long maxCount) {
+    List<String> messages = new ArrayList<>();
+    
+    while (messages.size() < maxCount) {
+        ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
+        if (records.isEmpty()) break;
+        
+        records.iterator().forEachRemaining(record -> {
+            if (messages.size() < maxCount) {
+                messages.add(record.value());
+            }
+        });
+    }
+    
+    return messages;
+}
