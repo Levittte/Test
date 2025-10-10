@@ -1,0 +1,25 @@
+@Repository
+@RequiredArgsConstructor
+public class ShareholderRepository {
+
+    private final DSLContext dsl;
+
+    public boolean checkEpkIdExistsInParentId(String inn, String ogrn) {
+        // Используем count() который всегда возвращает число
+        int count = dsl.selectCount()
+                .from(DSL.table("SHAREHOLDERS").as("s1"))
+                .join(DSL.table("SHAREHOLDER_ATTRIBUTES").as("sa"))
+                    .on(DSL.field("s1.ID_ATTRIBUTES", Long.class).eq(DSL.field("sa.ID", Long.class)))
+                .where(DSL.field("sa.INN", String.class).eq(inn))
+                .and(DSL.field("sa.OGRN", String.class).eq(ogrn))
+                .and(DSL.exists(
+                    dsl.selectOne()
+                       .from(DSL.table("SHAREHOLDERS").as("s2"))
+                       .where(DSL.field("s2.PARENT_ID", Long.class)
+                              .eq(DSL.field("s1.EPK_ID", Long.class)))
+                ))
+                .fetchOne(0, int.class);
+
+        return count > 0;
+    }
+}
