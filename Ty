@@ -1,0 +1,16 @@
+public boolean checkEpkIdExistsInParentIdSingleQuery(String inn, String ogrn) {
+    int count = dsl.selectCount()
+            .from(Shareholders.SHAREHOLDERS)
+            .where(Shareholders.SHAREHOLDERS.PARENT_ID.in(
+                dsl.select(Shareholders.SHAREHOLDERS.EPK_ID)
+                    .from(Shareholders.SHAREHOLDERS)
+                    .join(ShareholderAttributes.SHAREHOLDER_ATTRIBUTES)
+                    .on(ShareholderAttributes.SHAREHOLDER_ATTRIBUTES.SHAREHOLDER_ID
+                        .eq(Shareholders.SHAREHOLDERS.ID))
+                    .where(ShareholderAttributes.SHAREHOLDER_ATTRIBUTES.INN.eq(inn)
+                        .and(ShareholderAttributes.SHAREHOLDER_ATTRIBUTES.OGRN.eq(ogrn)))
+            ))
+            .fetchOneInto(int.class);  // Примитивный тип
+    
+    return count > 0;
+}
