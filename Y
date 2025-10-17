@@ -1,0 +1,69 @@
+@Component
+public class KafkaMessageReader {
+    
+    @Autowired
+    private ConsumerFactory<String, String> consumerFactory;
+    
+    private Consumer<String, String> consumer;
+    private final Map<TopicPartition, OffsetAndMetadata> currentOffsets = new HashMap<>();
+    
+    public List<String> readMessages(int count) {
+        if (consumer == null) {
+            initializeConsumer();
+        }
+        
+        List<String> messages = new ArrayList<>();
+        int received = 0;
+        
+        while (received < count) {
+            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(500));
+            
+            if (records.isEmpty()) {
+                break;
+            }
+            
+            for (ConsumerRecord<String, String> record : records) {
+                if (received < count) {
+                    messages.add(record.value());
+                    received++;
+                    
+                    // Сохраняем offset для коммита
+                    currentOffsets.put(
+                        new TopicPartition(record.topic(), record.partition()),
+                        new OffsetAndMetadata(record.offset() + 1)
+                    );
+                } else {
+                    break;
+                }
+            }
+            
+            // Коммитим после обработки каждой пачки
+            if (!currentOffsets.isEmpty()) {
+                consumer.commitSync(currentOffsets);
+            }
+        }
+        
+        return messages;
+    }
+    
+    private void initializeConsumer() {
+        consumer = consumerFactory.createConsumer();
+        
+        consumer.subscribe(Arrays.asList("your-topic"), new ConsumerRebalanceListener() {
+            @Override
+            public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+                // Коммитим при перебалансировке
+                consumer.commitSync(currentOffsets);
+            }
+            
+            @Override
+            public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+                // Сбрасываем при reassign
+                currentOffsets.clear();
+            }
+        });
+        
+        // Инициализация
+        consumer.poll(Duration.ofMillis(100));
+    }
+}
