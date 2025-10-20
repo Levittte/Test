@@ -1,0 +1,35 @@
+public class DlgConsumerServiceImpl {
+    public List<DlgMessageDto> getMessages(int messagesCount) {
+        List<DlgMessageDto> messages = new ArrayList<>();
+        try (Consumer<String, String> consumer = dlgConsumerFactory.createConsumer()) {
+            consumer.subscribe(Collections.singletonList(DLQTopic));
+            
+            while (messages.size() < messagesCount) {
+                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(10000));
+                
+                if (records.isEmpty()) {
+                    return messages;
+                }
+                
+                for (ConsumerRecord<String, String> record : records) {
+                    messages.add(new DlgMessageDto(record.key(), record.value()));
+                    
+                    if (messages.size() >= messagesCount) {
+                        // Коммитим offset следующего сообщения
+                        Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
+                        offsets.put(
+                            new TopicPartition(record.topic(), record.partition()),
+                            new OffsetAndMetadata(record.offset() + 1)
+                        );
+                        consumer.commitSync(offsets);
+                        return messages;
+                    }
+                }
+                
+                // Коммитим все обработанные записи батча
+                consumer.commitSync();
+            }
+        }
+        return messages;
+    }
+}
