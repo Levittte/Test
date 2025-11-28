@@ -1,0 +1,2 @@
+@EntityGraph(attributePaths = {"incident", "supportCenter", "supportCenter.productFabric", "supportCenter.users.peerInfo", "closedBy"})
+List<CenterClosures> findByStatusAndDay_DayDateBetweenOrderByDay_DayDateAscSupportCenter_ProductFabric_CodeNameAscClosedAtAsc(ClosureStatus status, LocalDate startDate, LocalDate endDate);
