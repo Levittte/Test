@@ -1,0 +1,178 @@
+Отличный вопрос! Учитывая, что бэкенд на Spring Boot, вот как должен выглядеть код с правильной обработкой Java byte[]:
+
+1. API сервис (для запроса файла)
+
+Этот код должен быть в файле с API-запросами, например:
+
+```
+src/shared/api/ или src/features/reports/api/
+```
+
+```typescript
+// Пример: src/shared/api/reports.ts
+import axios from 'axios';
+
+// DTO должен соответствовать тому, что присылает Spring Boot
+export interface FileResponseDTO {
+  fileName: string;
+  fileContent: number[]; // Java byte[] конвертируется в JSON как массив чисел
+  contentType: string;
+}
+
+export const downloadReport = async (): Promise<FileResponseDTO> => {
+  const response = await axios.get<FileResponseDTO>('/api/reports/download');
+  return response.data;
+};
+```
+
+2. SidebarItemType и список пунктов меню
+
+На основе ваших файлов, это должно быть в:
+
+```
+src/widgets/Sidebar/model/types/sidebar.ts (или подобном пути)
+```
+
+```typescript
+// Обновляем существующий интерфейс (из 1000015406.jpg)
+export interface SidebarItemType {
+  path: string;
+  text: string;
+  Icon: React.VFC<React.SVGProps<SVGSVGElement>>;
+  permission: UserPermission[];
+  isDownload?: boolean; // Добавляем флаг для пунктов скачивания
+}
+```
+
+3. Добавление нового пункта в SidebarItemList
+
+Там же, где определен SidebarItemList (из 1000015407-1000015408.jpg):
+
+```typescript
+// Файл со списком пунктов меню
+// Импортируем иконку для скачивания
+import DownloadIcon from '@shared/assets/icons/sidebar-icons/download.svg';
+
+const SidebarItemList: SidebarItemType[] = [
+  // ... существующие пункты
+  
+  // Добавляем новый пункт для скачивания
+  {
+    path: '#', // или можно оставить пустым, так как не используем для навигации
+    text: 'Скачать отчет',
+    Icon: DownloadIcon,
+    permission: [UserPermission.ADMIN], // или другой подходящий permission
+    isDownload: true, // Важно: добавляем этот флаг
+  },
+];
+```
+
+4. Обработчик клика в компоненте Sidebar
+
+В файле компонента Sidebar (из 1000015401.jpg):
+
+```typescript
+// src/widgets/Sidebar/ui/Sidebar.tsx
+import { useLocation } from 'react-router-dom';
+import { useDispatch } from 'react-redux';
+import { downloadReport, FileResponseDTO } from '@shared/api/reports';
+
+const Sidebar = ({ collapsed }: { collapsed: boolean }) => {
+  const location = useLocation();
+  const dispatch = useDispatch();
+
+  const handleDownloadClick = async (item: SidebarItemType) => {
+    if (item.isDownload) {
+      try {
+        // 1. Получаем DTO с массивом байт от Spring Boot
+        const response: FileResponseDTO = await downloadReport();
+        
+        // 2. Конвертируем массив чисел (которые прислала Java) в Uint8Array
+        // В Java byte[] в JSON превращается в массив чисел от -128 до 127
+        const byteArray = new Uint8Array(response.fileContent);
+        
+        // 3. Создаем Blob с правильным MIME-типом
+        const blob = new Blob([byteArray], { 
+          type: response.contentType || 'application/pdf' 
+        });
+        
+        // 4. Скачиваем файл
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = response.fileName || 'report.pdf';
+        
+        document.body.appendChild(link);
+        link.click();
+        
+        // 5. Очистка
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        
+      } catch (error) {
+        console.error('Ошибка при скачивании файла:', error);
+        // Здесь можно добавить уведомление для пользователя
+      }
+    } else {
+      // Обычная навигация
+      dispatch(calculationActions.setSearchBy({ selectedSearchValue: "", searchInputValue: "" }));
+    }
+  };
+
+  const activeSidebar = (item: SidebarItemType) => {
+    return !item.isDownload && item.path === location.pathname;
+  };
+
+  return (
+    // Ваш JSX (пример из 1000015401.jpg)
+    <NavLink
+      onClick={() => handleDownloadClick(item)}
+      to={!item.isDownload ? item.path : '#'}
+      className={clsx(styles.sidebarItem, { 
+        [styles.sidebarItemCollapsed]: collapsed, 
+        [styles.active]: activeSidebar(item)
+      })}
+    >
+      <item.Icon width={30} height={30} className={styles.sidebarIcon} />
+      {!collapsed && (
+        <span className={clsx(styles.sidebarItemText, {
+          [styles.sidebarItemTextActive]: activeSidebar(item)
+        })}>
+          {item.text}
+        </span>
+      )}
+    </NavLink>
+  );
+};
+```
+
+Итоговая структура файлов:
+
+```
+src/
+├── shared/
+│   ├── api/
+│   │   └── reports.ts           // API функция downloadReport с FileResponseDTO
+│   ├── assets/
+│   │   └── icons/
+│   │       └── sidebar-icons/
+│   │           └── download.svg // Новая иконка для скачивания
+│   └── types/
+│       └── sidebar.ts           // Обновленный SidebarItemType с isDownload
+├── widgets/
+│   └── Sidebar/
+│       ├── model/
+│       │   └── types/
+│       │       └── sidebarItems.ts // Список SidebarItemList с новым пунктом
+│       └── ui/
+│           └── Sidebar.tsx         // Компонент с handleDownloadClick
+```
+
+Ключевые моменты для Spring Boot:
+
+1. Java byte[] конвертируется в JSON как массив чисел, поэтому на фронтенде мы получаем number[]
+2. Обязательно используем Uint8Array для правильной конвертации массива чисел в бинарные данные
+3. Content-Type важно указывать - от него зависит, как браузер обработает файл
+4. Имя файла лучше получать из ответа, а не хардкодить
+
+Таким образом, код полностью адаптирован для работы с бэкендом на Spring Boot и правильно обрабатывает массив байт, приходящий от Java-сервера.
