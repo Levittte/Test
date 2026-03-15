@@ -1,0 +1,197 @@
+Отлично! Теперь, когда я вижу вашу реальную структуру кода, вот как нужно добавить пункт меню для скачивания файла с учетом ваших компонентов:
+
+1. Обновляем тип SidebarItemType
+
+```typescript
+// src/widgets/Sidebar/model/types/sidebar.ts (или где определен интерфейс)
+export interface SidebarItemType {
+  path: string;
+  text: string;
+  Icon: React.VFC<React.SVGProps<SVGSVGElement>>;
+  permission: UserPermission[];
+  isDownload?: boolean; // Добавляем флаг
+}
+```
+
+2. Добавляем новый пункт в список
+
+```typescript
+// Там где определен getCurrentSidebarItemList
+import DownloadIcon from '@shared/assets/icons/sidebar-icons/download.svg'; // импортируем иконку
+
+const SidebarItemList: SidebarItemType[] = [
+  // ... существующие пункты
+  {
+    path: '/download-report', // путь не важен, т.к. isDownload=true
+    text: 'Скачать отчет',
+    Icon: DownloadIcon,
+    permission: [UserPermission.ADMIN], // или другой permission
+    isDownload: true, // ВАЖНО: помечаем как пункт для скачивания
+  },
+];
+
+// Функция фильтрации (исправляем ошибку в вашем коде)
+export function getCurrentSidebarItemList(permissions: UserPermission[]) {
+  return SidebarItemList.filter(item => 
+    item.permission.some(p => permissions.includes(p))
+  );
+}
+```
+
+3. Обновляем SidebarItem компонент (1000015414.jpg)
+
+```typescript
+import styles from './SidebarItem.module.css'; // исправляем импорт
+
+interface SidebarItemProps {
+    className?: string;
+    item: SidebarItemType;
+    collapsed: boolean;
+}
+
+export const SidebarItem = memo((props: SidebarItemProps) => {
+    const { item, collapsed, className } = props;
+    const dispatch = useAppDispatch();
+    const location = useLocation();
+    
+    const activeSidebar = !item.isDownload && item.path === location.pathname;
+    
+    const handleClick = (e: React.MouseEvent) => {
+        if (item.isDownload) {
+            e.preventDefault(); // предотвращаем навигацию
+            handleDownload();
+        } else {
+            // Обычная навигация
+            dispatch(calculationActions.setSearchBy({ selectedSearchValue: '', searchInputValue: '' }));
+        }
+    };
+    
+    const handleDownload = async () => {
+        try {
+            // Импортируйте api функцию
+            const { downloadReport } = await import('@shared/api/reports');
+            const response = await downloadReport();
+            
+            // Конвертируем массив байт от Spring Boot
+            const byteArray = new Uint8Array(response.fileContent);
+            const blob = new Blob([byteArray], { type: response.contentType });
+            
+            // Скачиваем файл
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = response.fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            
+        } catch (error) {
+            console.error('Ошибка скачивания:', error);
+        }
+    };
+    
+    return (
+        <NavLink
+            onClick={handleClick}
+            to={item.path}
+            className={clsx(styles.sidebarItem, className, {
+                [styles.sidebarItemCollapsed]: collapsed,
+                [styles.active]: activeSidebar,
+            })}
+        >
+            <item.Icon 
+                width={30} 
+                height={30} 
+                className={styles.sidebarIcon}
+            />
+            {!collapsed && ( // исправляем условие: показываем текст когда не collapsed
+                <span className={clsx(styles.sidebarItemText, {
+                    [styles.sidebarItemTextActive]: activeSidebar
+                })}>
+                    {item.text}
+                </span>
+            )}
+        </NavLink>
+    );
+});
+```
+
+4. Sidebar компонент (1000015412.jpg) - остается без изменений
+
+```typescript
+import { SidebarItem } from './SidebarItem/SidebarItem';
+import styles from './Sidebar.module.css';
+
+interface SidebarProps {
+    className?: string;
+    collapsed: boolean;
+    setActiveSidebar: (collapsed: boolean) => void;
+}
+
+export const Sidebar = memo((props: SidebarProps) => {
+    const { className, collapsed, setActiveSidebar } = props;
+    const permissions = useAppSelector(getCurrentPermissions);
+
+    const renderSidebarItems = useMemo(() => {
+        return getCurrentSidebarItemList(permissions as UserPermission[]).map((item) => (
+            <SidebarItem
+                item={item}
+                collapsed={collapsed}
+                key={item.text}
+            />
+        ));
+    }, [collapsed, permissions]);
+
+    return (
+        <div className={clsx(styles.sidebar, { [styles.sidebarActive]: collapsed }, [className])}>
+            {renderSidebarItems}
+            <button
+                onClick={() => setActiveSidebar(!collapsed)} // исправляем: передаем !collapsed
+                className={styles.sidebarArrow}
+            >
+                {collapsed ? '→' : '←'} {/* или иконка */}
+            </button>
+        </div>
+    );
+});
+```
+
+5. API сервис (новый файл)
+
+```typescript
+// src/shared/api/reports.ts
+import axios from 'axios';
+
+export interface FileResponseDTO {
+    fileName: string;
+    fileContent: number[]; // массив байт от Spring Boot
+    contentType: string;
+}
+
+export const downloadReport = async (): Promise<FileResponseDTO> => {
+    const response = await axios.get<FileResponseDTO>('/api/reports/download');
+    return response.data;
+};
+```
+
+Ключевые изменения в вашем коде:
+
+1. В SidebarItem:
+   · Добавили проверку item.isDownload в handleClick
+   · Исправили activeSidebar - не активен для пунктов скачивания
+   · Исправили условие показа текста: !collapsed вместо collapsed
+2. В функции фильтрации исправили логику:
+   ```typescript
+   // Было неправильно:
+   return SidebarItemList.filter((permission) => SidebarItemType) === permissions.some((p) => p.permission);
+   
+   // Стало правильно:
+   return SidebarItemList.filter(item => item.permission.some(p => permissions.includes(p)));
+   ```
+3. В Sidebar исправили кнопку:
+   ```typescript
+   onClick={() => setActiveSidebar(!collapsed)} // передаем противоположное значение
+   ```
+
+Теперь новый пункт "Скачать отчет" появится в меню и будет скачивать файл при клике, не пытаясь перейти по ссылке.
