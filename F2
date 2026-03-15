@@ -1,0 +1,225 @@
+Отлично! Теперь я вижу, что у вас используется RTK Query для API запросов. Вот как нужно интегрировать скачивание файла с учетом вашей структуры:
+
+1. Создаем endpoint в RTK Query для скачивания файла
+
+```typescript
+// src/shared/api/reportsApi.ts (новый файл)
+import { rtkApi } from './rtkApi';
+
+export interface FileResponseDTO {
+    fileName: string;
+    fileContent: number[]; // массив байт от Spring Boot
+    contentType: string;
+}
+
+const reportsApi = rtkApi.injectEndpoints({
+    endpoints: (builder) => ({
+        downloadReport: builder.query<FileResponseDTO, void>({
+            query: () => ({
+                url: '/reports/download', // ваш endpoint на бэкенде
+                method: 'GET',
+            }),
+        }),
+        // Если нужен POST с параметрами
+        downloadReportWithParams: builder.mutation<FileResponseDTO, { year: number; month: number }>({
+            query: (params) => ({
+                url: '/reports/download',
+                method: 'POST',
+                body: params,
+            }),
+        }),
+    }),
+    overrideExisting: false,
+});
+
+export const { 
+    useDownloadReportQuery,     // для хука
+    useLazyDownloadReportQuery, // для ленивой загрузки (то что нам нужно!)
+    useDownloadReportWithParamsMutation 
+} = reportsApi;
+```
+
+2. Обновляем SidebarItem (1000015414.jpg) с использованием RTK Query
+
+```typescript
+// src/widgets/Sidebar/SidebarItem/SidebarItem.tsx
+import { memo } from 'react';
+import { NavLink } from 'react-router-dom';
+import { useAppDispatch } from '@shared/lib/hooks/useAppDispatch';
+import { useLocation } from 'react-router-dom';
+import clsx from 'clsx';
+import { calculationActions } from '@entities/Calculation';
+import { useLazyDownloadReportQuery } from '@shared/api/reportsApi'; // импортируем хук
+import styles from './SidebarItem.module.css';
+
+interface SidebarItemProps {
+    className?: string;
+    item: SidebarItemType;
+    collapsed: boolean;
+}
+
+export const SidebarItem = memo((props: SidebarItemProps) => {
+    const { item, collapsed, className } = props;
+    const dispatch = useAppDispatch();
+    const location = useLocation();
+    
+    // Хук для ленивой загрузки (запрос произойдет только при вызове)
+    const [downloadReport, { isLoading, error }] = useLazyDownloadReportQuery();
+    
+    const activeSidebar = !item.isDownload && item.path === location.pathname;
+    
+    const handleClick = async (e: React.MouseEvent) => {
+        if (item.isDownload) {
+            e.preventDefault();
+            
+            try {
+                // 1. Выполняем запрос через RTK Query
+                const response = await downloadReport().unwrap();
+                
+                // 2. Конвертируем массив байт в Blob
+                const byteArray = new Uint8Array(response.fileContent);
+                const blob = new Blob([byteArray], { 
+                    type: response.contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                });
+                
+                // 3. Скачиваем файл
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = response.fileName || 'report.xlsx';
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+                
+            } catch (err) {
+                console.error('Ошибка при скачивании файла:', err);
+                // Здесь можно показать уведомление
+            }
+        } else {
+            // Обычная навигация
+            dispatch(calculationActions.setSearchBy({ 
+                selectedSearchValue: '', 
+                searchInputValue: '' 
+            }));
+        }
+    };
+    
+    return (
+        <NavLink
+            onClick={handleClick}
+            to={item.path}
+            className={clsx(styles.sidebarItem, className, {
+                [styles.sidebarItemCollapsed]: collapsed,
+                [styles.active]: activeSidebar,
+            })}
+        >
+            <item.Icon 
+                width={30} 
+                height={30} 
+                className={styles.sidebarIcon}
+            />
+            {!collapsed && (
+                <span className={clsx(styles.sidebarItemText, {
+                    [styles.sidebarItemTextActive]: activeSidebar
+                })}>
+                    {isLoading ? 'Загрузка...' : item.text}
+                </span>
+            )}
+        </NavLink>
+    );
+});
+```
+
+3. Альтернатива: используем $api из axios (1000015419.jpg)
+
+Если хотите использовать axios напрямую:
+
+```typescript
+// src/shared/api/reports.ts
+import { $api } from './axiosConfig'; // или $authHost если нужна авторизация
+
+export interface FileResponseDTO {
+    fileName: string;
+    fileContent: number[];
+    contentType: string;
+}
+
+export const downloadReport = async (): Promise<FileResponseDTO> => {
+    const response = await $api.get<FileResponseDTO>('/reports/download');
+    return response.data;
+};
+```
+
+И тогда в SidebarItem:
+
+```typescript
+import { downloadReport } from '@shared/api/reports';
+
+const handleClick = async () => {
+    if (item.isDownload) {
+        e.preventDefault();
+        try {
+            const response = await downloadReport();
+            // ... остальной код скачивания
+        } catch (error) {
+            console.error('Ошибка:', error);
+        }
+    }
+};
+```
+
+4. Добавляем индикацию загрузки (опционально)
+
+```typescript
+<NavLink
+    onClick={handleClick}
+    to={item.path}
+    className={clsx(styles.sidebarItem, className, {
+        [styles.sidebarItemCollapsed]: collapsed,
+        [styles.active]: activeSidebar,
+        [styles.loading]: isLoading, // добавляем класс для состояния загрузки
+    })}
+>
+    {isLoading ? (
+        <Spinner className={styles.spinner} /> // показываем спиннер
+    ) : (
+        <item.Icon width={30} height={30} className={styles.sidebarIcon} />
+    )}
+    {!collapsed && (
+        <span className={clsx(styles.sidebarItemText, {
+            [styles.sidebarItemTextActive]: activeSidebar
+        })}>
+            {isLoading ? 'Скачивание...' : item.text}
+        </span>
+    )}
+</NavLink>
+```
+
+5. Обновляем список пунктов меню
+
+```typescript
+// Там где определен getCurrentSidebarItemList
+import DownloadIcon from '@shared/assets/icons/sidebar-icons/download.svg';
+
+const SidebarItemList: SidebarItemType[] = [
+    // ... существующие пункты
+    {
+        path: '#',
+        text: 'Скачать отчет',
+        Icon: DownloadIcon,
+        permission: [UserPermission.ADMIN], // или другой permission
+        isDownload: true,
+    },
+];
+```
+
+Преимущества использования RTK Query:
+
+1. Кеширование - RTK Query автоматически кеширует результаты
+2. Состояния загрузки - isLoading, isError уже есть
+3. Автоматическая обработка ошибок
+4. Интеграция с Redux - можно добавлять данные в стор при необходимости
+
+Теперь скачивание файла полностью интегрировано с вашей существующей структурой RTK Query!
