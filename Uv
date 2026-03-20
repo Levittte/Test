@@ -1,0 +1,180 @@
+import org.jooq.*;
+import org.jooq.impl.DSL;
+import org.springframework.stereotype.Repository;
+import java.util.List;
+import static com.yourpackage.generated.Tables.*;
+
+@Repository
+public class RuleExportRepository {
+    
+    private final DSLContext dsl;
+    
+    public RuleExportRepository(DSLContext dsl) {
+        this.dsl = dsl;
+    }
+    
+    public List<RuleExportDto> getGroupedRulesForExport() {
+        return dsl
+            .select(
+                // Базовые поля
+                CCL_DEFINITION_RULES.ID,
+                CCL_DEFINITION_RULES.NAME.as("rule_name"),
+                CCL_DEFINITION_RULES.CLASS_NAME,
+                CCL_DEFINITION_RULES.OKOPF,
+                CCL_DEFINITION_RULES.OKFS,
+                CCL_DEFINITION_RULES.OKVED,
+                CCL_DEFINITION_RULES.OKOGU,
+                CCL_DEFINITION_RULES.INN,
+                
+                // Агрегация OKSM через запятую (PostgreSQL syntax)
+                DSL.stringAgg(CCL_DEFINITION_RULES.OKSM, ", ")
+                    .withinGroupOrderBy(CCL_DEFINITION_RULES.OKSM)
+                    .as("oksm"),
+                
+                // Статус на русском
+                DSL.decode()
+                    .when(CCL_DEFINITION_RULES.STATUS.eq("active"), "действующее")
+                    .when(CCL_DEFINITION_RULES.STATUS.eq("disabled"), "замененное")
+                    .when(CCL_DEFINITION_RULES.STATUS.eq("archived"), "удаленное")
+                    .otherwise(DSL.val(""))
+                    .as("status"),
+                
+                // Дата изменения
+                DSL.coalesce(
+                    CCL_LOG_CHANGE_RULES.CHANGE_DATE,
+                    CCL_DEFINITION_RULES.CREATED_DATE
+                ).as("change_date"),
+                
+                // Пользователь
+                DSL.coalesce(
+                    CCL_LOG_CHANGE_RULES.CHANGED_BY,
+                    CCL_DEFINITION_RULES.CREATED_BY
+                ).as("changed_by"),
+                
+                CCL_LOG_CHANGE_RULES.RULE_ID.as("changed_rule_id")
+            )
+            .from(CCL_DEFINITION_RULES)
+            .leftJoin(CCL_LOG_CHANGE_RULES)
+                .on(CCL_DEFINITION_RULES.ID.eq(CCL_LOG_CHANGE_RULES.RULE_ID))
+            .groupBy(
+                CCL_DEFINITION_RULES.ID,
+                CCL_DEFINITION_RULES.NAME,
+                CCL_DEFINITION_RULES.CLASS_NAME,
+                CCL_DEFINITION_RULES.OKOPF,
+                CCL_DEFINITION_RULES.OKFS,
+                CCL_DEFINITION_RULES.OKVED,
+                CCL_DEFINITION_RULES.OKOGU,
+                CCL_DEFINITION_RULES.INN,
+                CCL_LOG_CHANGE_RULES.CHANGE_DATE,
+                CCL_LOG_CHANGE_RULES.CHANGED_BY,
+                CCL_LOG_CHANGE_RULES.RULE_ID
+            )
+            .fetch()
+            .map(this::toDto);
+    }
+    
+    /**
+     * Вариант с группировкой по всем полям, кроме OKSM
+     * (если нужно объединять правила с разными ID, но одинаковыми остальными атрибутами)
+     */
+    public List<RuleExportDto> getGroupedRulesByAllFieldsExceptOksm() {
+        // Используем оконные функции PostgreSQL
+        return dsl
+            .with("ranked_rules")
+            .as(
+                dsl.select(
+                    CCL_DEFINITION_RULES.ID,
+                    CCL_DEFINITION_RULES.NAME,
+                    CCL_DEFINITION_RULES.CLASS_NAME,
+                    CCL_DEFINITION_RULES.OKOPF,
+                    CCL_DEFINITION_RULES.OKFS,
+                    CCL_DEFINITION_RULES.OKVED,
+                    CCL_DEFINITION_RULES.OKOGU,
+                    CCL_DEFINITION_RULES.INN,
+                    CCL_DEFINITION_RULES.OKSM,
+                    CCL_DEFINITION_RULES.STATUS,
+                    CCL_DEFINITION_RULES.CREATED_DATE,
+                    CCL_DEFINITION_RULES.CREATED_BY,
+                    // Нумеруем строки в каждой группе
+                    DSL.rowNumber().over(
+                        PartitionBy
+                            .partitionBy(
+                                CCL_DEFINITION_RULES.NAME,
+                                CCL_DEFINITION_RULES.CLASS_NAME,
+                                DSL.coalesce(CCL_DEFINITION_RULES.OKOPF, ""),
+                                DSL.coalesce(CCL_DEFINITION_RULES.OKFS, ""),
+                                DSL.coalesce(CCL_DEFINITION_RULES.OKVED, ""),
+                                DSL.coalesce(CCL_DEFINITION_RULES.OKOGU, ""),
+                                DSL.coalesce(CCL_DEFINITION_RULES.INN, ""),
+                                CCL_DEFINITION_RULES.STATUS
+                            )
+                            .orderBy(CCL_DEFINITION_RULES.ID)
+                    ).as("rn")
+                )
+                .from(CCL_DEFINITION_RULES)
+            )
+            .select(
+                DSL.field("id", Long.class),
+                DSL.field("name", String.class).as("rule_name"),
+                DSL.field("class_name", String.class),
+                DSL.field("okopf", String.class),
+                DSL.field("okfs", String.class),
+                DSL.field("okved", String.class),
+                DSL.field("okogu", String.class),
+                DSL.field("inn", String.class),
+                
+                // Агрегируем OKSM для группы
+                DSL.stringAgg(DSL.field("oksm", String.class), ", ")
+                    .withinGroupOrderBy(DSL.field("oksm", String.class))
+                    .as("oksm"),
+                
+                // Статус
+                DSL.decode()
+                    .when(DSL.field("status", String.class).eq("active"), "действующее")
+                    .when(DSL.field("status", String.class).eq("disabled"), "замененное")
+                    .when(DSL.field("status", String.class).eq("archived"), "удаленное")
+                    .otherwise(DSL.val(""))
+                    .as("status"),
+                
+                // Дату и пользователя берем из первой записи группы
+                DSL.field("created_date", LocalDateTime.class).as("change_date"),
+                DSL.field("created_by", String.class).as("changed_by"),
+                
+                DSL.val((Long) null).as("changed_rule_id") // ID измененного правила
+            )
+            .from(DSL.table("ranked_rules"))
+            .where(DSL.field("rn", Integer.class).eq(1))
+            .groupBy(
+                DSL.field("id"),
+                DSL.field("name"),
+                DSL.field("class_name"),
+                DSL.field("okopf"),
+                DSL.field("okfs"),
+                DSL.field("okved"),
+                DSL.field("okogu"),
+                DSL.field("inn"),
+                DSL.field("created_date"),
+                DSL.field("created_by")
+            )
+            .fetch()
+            .map(this::toDto);
+    }
+    
+    private RuleExportDto toDto(Record record) {
+        RuleExportDto dto = new RuleExportDto();
+        dto.setId(record.get("id", Long.class));
+        dto.setRuleName(record.get("rule_name", String.class));
+        dto.setClassName(record.get("class_name", String.class));
+        dto.setOkopf(record.get("okopf", String.class));
+        dto.setOkfs(record.get("okfs", String.class));
+        dto.setOkved(record.get("okved", String.class));
+        dto.setOkogu(record.get("okogu", String.class));
+        dto.setInn(record.get("inn", String.class));
+        dto.setOksm(record.get("oksm", String.class));
+        dto.setStatus(record.get("status", String.class));
+        dto.setChangeDate(record.get("change_date", LocalDateTime.class));
+        dto.setChangedBy(record.get("changed_by", String.class));
+        dto.setChangedRuleId(record.get("changed_rule_id", Long.class));
+        return dto;
+    }
+}
