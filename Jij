@@ -1,0 +1,38 @@
+@Component
+@RequiredArgsConstructor
+public class DefectAccountMapper {
+    
+    /**
+     * Компактная версия - все в одном методе
+     */
+    public List<DefectAccountDto> toFlatList(List<CCDefectEntity> defects) {
+        if (defects == null || defects.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        return defects.stream()
+            .flatMap(defect -> {
+                Set<AccountEntity> accounts = defect.getAccounts();
+                if (accounts == null || accounts.isEmpty()) {
+                    // Нет аккаунтов - один DTO
+                    return Stream.of(DefectAccountDto.builder()
+                        .defectId(defect.getId())
+                        .defectName(defect.getName())
+                        .defectDescription(defect.getDescription())
+                        .accountId(null)
+                        .accountUsername(null)
+                        .build());
+                }
+                // Есть аккаунты - DTO для каждого
+                return accounts.stream()
+                    .map(account -> DefectAccountDto.builder()
+                        .defectId(defect.getId())
+                        .defectName(defect.getName())
+                        .defectDescription(defect.getDescription())
+                        .accountId(account.getId())
+                        .accountUsername(account.getUsername())
+                        .build());
+            })
+            .collect(Collectors.toList());
+    }
+}
