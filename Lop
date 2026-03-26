@@ -1,0 +1,31 @@
+@Mapper(componentModel = "spring")
+public interface DefectAccountMapper {
+    
+    // Базовый метод для одной пары
+    @Mapping(target = "defectId", source = "defect.id")
+    @Mapping(target = "defectName", source = "defect.name")
+    @Mapping(target = "defectDescription", source = "defect.description")
+    @Mapping(target = "accountId", source = "account.id")
+    @Mapping(target = "accountUsername", source = "account.username")
+    DefectAccountDto toDto(Defect defect, Account account);
+    
+    // Разворачивает один дефект в список DTO (по количеству аккаунтов)
+    default List<DefectAccountDto> toFlatList(Defect defect) {
+        if (defect.getAccounts() == null || defect.getAccounts().isEmpty()) {
+            return Collections.emptyList();
+        }
+        return defect.getAccounts().stream()
+            .map(account -> toDto(defect, account))
+            .collect(Collectors.toList());
+    }
+    
+    // Разворачивает список дефектов в плоский список DTO
+    default List<DefectAccountDto> toFlatList(List<Defect> defects) {
+        if (defects == null || defects.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return defects.stream()
+            .flatMap(defect -> toFlatList(defect).stream())
+            .collect(Collectors.toList());
+    }
+}
