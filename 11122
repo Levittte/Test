@@ -1,0 +1,14 @@
+@Repository
+public interface CCDefectRepository extends JpaRepository<CCDefectEntity, Long> {
+    
+    @Query("""
+        SELECT new com.example.dto.CCDefectAccountDto(
+            d.id, d.clientId, d.clientName, d.ccCode, d.ccName,
+            d.inn, d.okopf, d.okfs, d.okved, d.okogu, d.oksm,
+            a.synthNumber, a.ppf, a.openedAt
+        )
+        FROM CCDefectEntity d
+        LEFT JOIN d.accounts a
+        """)
+    Page<CCDefectAccountDto> findAllDtos(Pageable pageable);
+}
