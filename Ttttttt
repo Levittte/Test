@@ -1,0 +1,45 @@
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.TestPropertySource;
+
+import static org.mockito.Mockito.*;
+
+@SpringBootTest
+@TestPropertySource(properties = {
+    "upz.request.maxAttempts=3",
+    "upz.request.delay=100"  // маленькая задержка для теста
+})
+class UPZClientTest {
+
+    @MockBean  // или @SpyBean, если нужен реальный вызов
+    private UPZClient upzClient;
+
+    @Test
+    void shouldRetryOnException() {
+        // Настраиваем мок: 2 ошибки, потом успех
+        when(upzClient.create(any()))
+            .thenThrow(new RuntimeException("UPZ error"))
+            .thenThrow(new RuntimeException("UPZ error"))
+            .thenReturn(successResponse());
+
+        // Вызываем метод
+        JsonRpcResponseDTO<UPZResponseDTO<UPZCreateTaskResponseDTO>> result = 
+            upzClient.create(createDto());
+
+        // Проверяем
+        verify(upzClient, times(3)).create(any());
+        assertThat(result).isNotNull();
+    }
+
+    private UPZCreateDTO<Map<String, UPZAttributeValueDTO>> createDto() {
+        // ваш DTO
+        return new UPZCreateDTO<>();
+    }
+
+    private JsonRpcResponseDTO<UPZResponseDTO<UPZCreateTaskResponseDTO>> successResponse() {
+        // ваш успешный ответ
+        return new JsonRpcResponseDTO<>();
+    }
+}
