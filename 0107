@@ -1,0 +1,113 @@
+public class CCDefectRepositoryImpl implements CCDefectRepository {
+    
+    @PersistenceContext
+    private EntityManager entityManager;
+    
+    @Autowired
+    private SpecificationBuilder specificationBuilder;
+    
+    private static final String DEFECT_ACCOUNTS_FIELD = "accounts";
+    
+    // ==========================================
+    // ГЛАВНЫЙ МЕТОД ПОДСЧЁТА
+    // ==========================================
+    private Long fetchCount(CriteriaBuilder cb, 
+                            Map<String, DashboardFilterDTO> filters,
+                            Map<String, ColumnFilter> columns) {
+        
+        // 1. Дефекты БЕЗ аккаунтов (NOT EXISTS)
+        Long withoutAccounts = countDefectsWithoutAccounts(cb, filters, columns);
+        
+        // 2. Аккаунты С дефектами (EXISTS)
+        Long accountsWithDefects = countAccountsWithDefects(cb, filters, columns);
+        
+        return withoutAccounts + accountsWithDefects;
+    }
+    
+    // ==========================================
+    // ЗАПРОС 1: Дефекты без аккаунтов
+    // ==========================================
+    private Long countDefectsWithoutAccounts(CriteriaBuilder cb,
+                                             Map<String, DashboardFilterDTO> filters,
+                                             Map<String, ColumnFilter> columns) {
+        
+        CriteriaQuery<Long> cq = cb.createQuery(Long.class);
+        Root<CCDefectEntity> defect = cq.from(CCDefectEntity.class);
+        
+        // ===== ПОДЗАПРОС: проверяем есть ли аккаунты =====
+        Subquery<Long> subquery = cq.subquery(Long.class);
+        Root<CCAccountEntity> account = subquery.from(CCAccountEntity.class);
+        
+        subquery.select(cb.literal(1L))
+                .where(cb.equal(account.get("defectId"), defect.get("id")));
+                // ИЛИ если маппинг через @OneToMany:
+                // .where(cb.equal(account.get("defect"), defect));
+        
+        // ===== УСЛОВИЯ =====
+        // БЕЗ аккаунтов
+        Predicate noAccounts = cb.not(cb.exists(subquery));
+        
+        // Фильтры по дефектам (БЕЗ JOIN!)
+        Map<String, Join> emptyJoinMap = new HashMap<>();
+        Specification<CCDefectEntity> spec = specificationBuilder.buildSpecification(
+            filters, columns, emptyJoinMap
+        );
+        Predicate filterPredicate = spec.toPredicate(defect, cq, cb);
+        
+        // Объединяем
+        if (filterPredicate != null) {
+            cq.where(cb.and(noAccounts, filterPredicate));
+        } else {
+            cq.where(noAccounts);
+        }
+        
+        cq.select(cb.count(defect));
+        
+        return entityManager.createQuery(cq).getSingleResult();
+    }
+    
+    // ==========================================
+    // ЗАПРОС 2: Аккаунты с дефектами
+    // ==========================================
+    private Long countAccountsWithDefects(CriteriaBuilder cb,
+                                          Map<String, DashboardFilterDTO> filters,
+                                          Map<String, ColumnFilter> columns) {
+        
+        CriteriaQuery<Long> cq = cb.createQuery(Long.class);
+        Root<CCAccountEntity> account = cq.from(CCAccountEntity.class);
+        
+        // ===== ПОДЗАПРОС: проверяем есть ли дефект =====
+        Subquery<Long> subquery = cq.subquery(Long.class);
+        Root<CCDefectEntity> defect = subquery.from(CCDefectEntity.class);
+        
+        subquery.select(cb.literal(1L))
+                .where(cb.equal(defect.get("id"), account.get("defectId")));
+        
+        // ===== ФИЛЬТРЫ ПО ДЕФЕКТАМ В ПОДЗАПРОСЕ =====
+        if (hasDefectFilters(filters, columns)) {
+            Map<String, Join> emptyJoinMap = new HashMap<>();
+            Specification<CCDefectEntity> spec = specificationBuilder.buildSpecification(
+                filters, columns, emptyJoinMap
+            );
+            Predicate filterPredicate = spec.toPredicate(defect, subquery, cb);
+            if (filterPredicate != null) {
+                subquery.where(filterPredicate);
+            }
+        }
+        
+        // ===== УСЛОВИЕ: EXISTS (аккаунт связан с дефектом) =====
+        cq.select(cb.count(account))
+          .where(cb.exists(subquery));
+        
+        return entityManager.createQuery(cq).getSingleResult();
+    }
+    
+    // ==========================================
+    // ВСПОМОГАТЕЛЬНЫЙ МЕТОД
+    // ==========================================
+    private boolean hasDefectFilters(Map<String, DashboardFilterDTO> filters,
+                                     Map<String, ColumnFilter> columns) {
+        return (filters != null && !filters.isEmpty()) ||
+               (columns != null && !columns.isEmpty());
+    }
+}
