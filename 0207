@@ -1,0 +1,15 @@
+SELECT COUNT(d.id) 
+FROM cc_defect d
+WHERE NOT EXISTS (
+    SELECT 1 
+    FROM cc_account a 
+    WHERE a.cc_defect_id = d.id
+)
+
+SELECT COUNT(a.id) 
+FROM cc_account a
+WHERE EXISTS (
+    SELECT 1 
+    FROM cc_defect d 
+    WHERE d.id = a.cc_defect_id
+);
