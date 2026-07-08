@@ -1,0 +1,21 @@
+if (filterDTO instanceof CompoundFilterDTO compound) {
+
+    // Здесь мы не создаем массив для всех условий, а пакуем только итоговый результат в массив
+    LocalDate[] bounds = compound.getConditions().stream()
+        .map(c -> new LocalDate[]{
+            LocalDate.parse(c.getDateFrom(), DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+            LocalDate.parse(c.getDateTo(), DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        })
+        .collect(Collectors.teeing(
+            Collectors.mapping(arr -> arr[0], FilterOperator.OR.equals(compound.getOperator()) ? Collectors.minBy(LocalDate::compareTo) : Collectors.maxBy(LocalDate::compareTo)),
+            Collectors.mapping(arr -> arr[1], FilterOperator.OR.equals(compound.getOperator()) ? Collectors.maxBy(LocalDate::compareTo) : Collectors.minBy(LocalDate::compareTo)),
+            (s, e) -> new LocalDate[]{s.orElseThrow(), e.orElseThrow()}
+        ));
+
+    if (!FilterOperator.OR.equals(compound.getOperator()) && bounds[0].isAfter(bounds[1])) {
+        return;
+    }
+    if (Period.between(bounds[0], bounds[1]).toTotalMonths() > 12) {
+        throw new IllegalArgumentException("Период превышает 12 месяцев");
+    }
+}
