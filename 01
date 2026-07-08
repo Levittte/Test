@@ -1,0 +1,29 @@
+if (filterDTO instanceof CompoundFilterDTO compound) {
+
+    // Преобразуем условия в пары дат
+    var dateRanges = compound.getConditions().stream()
+        .map(c -> new LocalDate[]{
+            LocalDate.parse(c.getDateFrom(), DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+            LocalDate.parse(c.getDateTo(), DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        })
+        .collect(Collectors.toList());
+
+    if (FilterOperator.OR.equals(compound.getOperator())) {
+        // OR: Проверяем каждый по отдельности (любой из них не должен превышать 12)
+        dateRanges.forEach(arr -> {
+            if (Period.between(arr[0], arr[1]).toTotalMonths() > 12) {
+                throw new IllegalArgumentException("Один из периодов превышает 12 месяцев");
+            }
+        });
+
+    } else { // AND
+        // AND: Суммируем длительность ВСЕХ периодов
+        long totalMonths = dateRanges.stream()
+            .mapToLong(arr -> Period.between(arr[0], arr[1]).toTotalMonths())
+            .sum();
+
+        if (totalMonths > 12) {
+            throw new IllegalArgumentException("Суммарная продолжительность всех периодов превышает 12 месяцев");
+        }
+    }
+}
